@@ -1,95 +1,82 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+'use client';
+import { Button, Container, Typography, Box, Paper } from '@mui/material';
+import { useRouter } from 'next/navigation';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 
 export default function Home() {
-  return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol>
-          <li>
-            Get started by editing <code>app/page.tsx</code>.
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const router = useRouter();
 
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={styles.secondary}
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        backgroundImage: 'url("images\onlineshopping.jfif")', // tvoja slika
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundColor: 'rgba(255, 255, 255, 0.7)', // blagi overlay
+          backdropFilter: 'blur(2px)', // malo zamuti pozadinu
+          zIndex: 0,
+        },
+      }}
+    >
+      <Container maxWidth="sm" sx={{ position: 'relative', zIndex: 1 }}>
+        <Paper 
+          elevation={6} 
+          sx={{ 
+            p: 5, 
+            borderRadius: 4, 
+            textAlign: 'center', 
+            background: 'rgba(255,255,255,0.9)', 
+            boxShadow: '0 8px 30px rgba(0,0,0,0.15)'
+          }}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          <Box sx={{ mb: 3 }}>
+            <ShoppingCartIcon sx={{ fontSize: 60, color: '#00acc1' }} />
+          </Box>
+
+          <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
+            Dobrodošli u Online Prodavnicu!
+          </Typography>
+
+          <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 4 }}>
+            Pregledajte naše proizvode i kreirajte svoje narudžbe
+          </Typography>
+
+          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              size="large" 
+              onClick={() => router.push('/login')}
+              sx={{ px: 4, py: 1.5, fontWeight: 600 }}
+            >
+              Prijava
+            </Button>
+
+            <Button 
+              variant="outlined" 
+              color="primary" 
+              size="large" 
+              onClick={() => router.push('/register')}
+              sx={{ px: 4, py: 1.5, fontWeight: 600 }}
+            >
+              Registracija
+            </Button>
+          </Box>
+        </Paper>
+      </Container>
+    </Box>
   );
 }
