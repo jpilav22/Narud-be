@@ -1,59 +1,50 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Container, Typography, Button, Box, CircularProgress, TextField, Badge, IconButton, Paper, Stack } from '@mui/material';
+import { Container, Typography, Button, Box, CircularProgress, IconButton, Paper, Stack, Badge } from '@mui/material';
 import { ShoppingCart } from '@mui/icons-material';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import ProizvodiTable from './components/ProizvodiTable';
 import DashboardLayout from '../dashboard/components/DashboardLayout';
-import ProizvodFormDialog from './components/ProizvodFormDialog';
-import NarudzbaFormDialog from '../narudzbe/components/NarudzbaFormDialog';
-import NarudzbaEditDialog from '../narudzbe/components/NarudzbaEditDialog';
+
 import { Toaster } from 'react-hot-toast';
+import NarudzbeTable from './components/NarudzbeTable';
+import NarudzbaFormDialog from './components/NarudzbaFormDialog';
+import NarudzbaEditDialog from './components/NarudzbaEditDialog';
 import { Tooltip, Chip, FormHelperText } from '@mui/material';
-export default function ProizvodiPage() {
+export default function NarudzbePage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
-  const [proizvodi, setProizvodi] = useState<any[]>([]);
-  const [filteredProizvodi, setFilteredProizvodi] = useState<any[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [loadingProizvodi, setLoadingProizvodi] = useState(true);
-  const [selectedProizvod, setSelectedProizvod] = useState<any | null>(null);
-  const [openDialog, setOpenDialog] = useState(false);
-  const [flag, setFlag] = useState(0);
-
-  // Za korpu i narudzbe
   const [narudzbe, setNarudzbe] = useState<any[]>([]);
+  const [loadingNarudzbe, setLoadingNarudzbe] = useState(true);
   const [selectedNarudzba, setSelectedNarudzba] = useState<any | null>(null);
   const [openNarudzbaDialog, setOpenNarudzbaDialog] = useState(false);
   const [openNarudzbaEdit, setOpenNarudzbaEdit] = useState(false);
   const [aktivnaNarudzba, setAktivnaNarudzba] = useState<any | null>(null);
   const [brojStavki, setBrojStavki] = useState<number>(0);
+  const [flag, setFlag] = useState(0);
 
+  // 🔹 Dohvati korisnika
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) setUser(JSON.parse(storedUser));
   }, []);
 
+  // 🔹 Dohvati narudžbe
   useEffect(() => {
-    const fetchProizvodi = async () => {
-      setLoadingProizvodi(true);
-      const { data } = await supabase.from('proizvodi').select('*').order('naziv', { ascending: true });
-      setProizvodi(data || []);
-      setFilteredProizvodi(data || []);
-      setLoadingProizvodi(false);
-    };
-
     const fetchNarudzbe = async () => {
-      const { data } = await supabase.from('narudzbe').select('*').order('datum_kreiranja', { ascending: false });
+      setLoadingNarudzbe(true);
+      const { data } = await supabase
+        .from('narudzbe')
+        .select('*, korisnici(ime, prezime)')
+        .order('datum_kreiranja', { ascending: false });
       setNarudzbe(data || []);
+      setLoadingNarudzbe(false);
     };
-
-    fetchProizvodi();
     fetchNarudzbe();
   }, [flag]);
 
+  // 🔹 Postavi aktivnu narudžbu
   useEffect(() => {
     if (user && narudzbe.length) {
       const aktivna = narudzbe.find(
@@ -63,6 +54,7 @@ export default function ProizvodiPage() {
     }
   }, [user, narudzbe]);
 
+  // 🔹 Broj stavki u korpi
   useEffect(() => {
     const fetchBrojStavki = async () => {
       if (!aktivnaNarudzba) {
@@ -78,42 +70,47 @@ export default function ProizvodiPage() {
     fetchBrojStavki();
   }, [aktivnaNarudzba, flag]);
 
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setFilteredProizvodi(proizvodi);
-    } else {
-      const lower = searchTerm.toLowerCase();
-      setFilteredProizvodi(proizvodi.filter((p) => p.naziv.toLowerCase().includes(lower)));
-    }
-  }, [searchTerm, proizvodi]);
-
   const refresh = () => setFlag((f) => f + 1);
 
   if (user === null)
-    return <Typography variant="h6" sx={{ mt: 4, textAlign: 'center' }}>Učitavanje korisnika...</Typography>;
+    return (
+      <Typography variant="h6" sx={{ mt: 4, textAlign: 'center' }}>
+        Učitavanje korisnika...
+      </Typography>
+    );
 
   if (!user)
-    return <Typography variant="h6" sx={{ mt: 4, textAlign: 'center' }}>Morate biti prijavljeni da biste pristupili ovoj stranici.</Typography>;
+    return (
+      <Typography variant="h6" sx={{ mt: 4, textAlign: 'center' }}>
+        Morate biti prijavljeni da biste pristupili ovoj stranici.
+      </Typography>
+    );
 
   return (
     <DashboardLayout>
       <Container sx={{ py: 4 }}>
-        <Toaster position="top-center" toastOptions={{ style: { transform: 'translateY(50px)' } }} />
+        <Toaster
+          position="top-center"
+          toastOptions={{ style: { transform: 'translateY(50px)' } }}
+        />
 
-        {/* HEADER */}
+        {/* 🔹 HEADER */}
         <Paper sx={{ p: 3, mb: 3, borderRadius: 3, boxShadow: 3 }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h4">Upravljanje proizvodima</Typography>
+            <Typography variant="h4">
+              {user.uloga === 'ADMIN' ? 'Sve narudžbe' : 'Moje narudžbe'}
+            </Typography>
+
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {/* IKONA KORPE */}
+              {/* 🛒 Korpa */}
               <Box sx={{ textAlign: 'center' }}>
               <Tooltip title={aktivnaNarudzba ? "Detalji narudžbe" : "Nova narudžba"}>
                 <IconButton
                   color="primary"
                   onClick={() => {
-                    if (aktivnaNarudzba) {
+                    if (aktivnaNarudzba)
                       router.push(`/narudzbe/${aktivnaNarudzba.id}`);
-                    } else {
+                    else {
                       setSelectedNarudzba(null);
                       setOpenNarudzbaDialog(true);
                     }
@@ -125,7 +122,10 @@ export default function ProizvodiPage() {
                 </IconButton>
                 </Tooltip>
                 {!aktivnaNarudzba && (
-                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mt: 0.5 }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ display: 'block', color: 'text.secondary', mt: 0.5 }}
+                  >
                     Dodaj narudžbu
                   </Typography>
                 )}
@@ -136,42 +136,27 @@ export default function ProizvodiPage() {
           </Stack>
         </Paper>
 
-       
-
-        {/* TABELE - SAMO PROIZVODI */}
+        {/* 🔹 TABELA NARUDŽBI */}
         <Paper sx={{ p: 3, borderRadius: 3, boxShadow: 3 }}>
-          <Typography variant="h5" sx={{ mb: 2 }}>Proizvodi</Typography>
-          {loadingProizvodi ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress /></Box>
+          {loadingNarudzbe ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress />
+            </Box>
           ) : (
-            <ProizvodiTable
-              proizvodi={filteredProizvodi}
+            <NarudzbeTable
+              narudzbe={narudzbe}
               onChange={refresh}
-              loading={loadingProizvodi}
-              onEdit={(proizvod: any) => {
-                setSelectedProizvod(proizvod);
-                setOpenDialog(true);
+              loading={loadingNarudzbe}
+              onEdit={(narudzba: any) => {
+                setSelectedNarudzba(narudzba);
+                setOpenNarudzbaEdit(true);
               }}
               userRole={user.uloga}
             />
           )}
-          {user.uloga === 'ADMIN' && (
-            <Box sx={{ mt: 2 }}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={() => {
-                  setSelectedProizvod(null);
-                  setOpenDialog(true);
-                }}
-              >
-                Dodaj novi proizvod
-              </Button>
-            </Box>
-          )}
         </Paper>
 
-        {/* DIALOGS */}
+        {/* 🔹 DIJALOZI */}
         <NarudzbaEditDialog
           open={openNarudzbaEdit}
           onClose={() => setOpenNarudzbaEdit(false)}
@@ -183,13 +168,6 @@ export default function ProizvodiPage() {
           open={openNarudzbaDialog}
           onClose={() => setOpenNarudzbaDialog(false)}
           selectedNarudzba={selectedNarudzba}
-          onSuccess={refresh}
-        />
-
-        <ProizvodFormDialog
-          open={openDialog}
-          onClose={() => setOpenDialog(false)}
-          selectedProizvod={selectedProizvod}
           onSuccess={refresh}
         />
       </Container>

@@ -67,7 +67,9 @@ export default function ProizvodForm({ onSuccess, selectedProizvod, onCancelEdit
     try {
       let proizvodId = selectedProizvod?.id || crypto.randomUUID();
       let imageUrl = selectedProizvod?.slika || null;
-
+      const akcijskaCijena = parseFloat(data.akcijska_cijena);
+      const naAkciji = akcijskaCijena > 0 ? true : null;
+      
       if (imageFile) {
         const uploadedUrl = await uploadImageToStorage(proizvodId);
         if (uploadedUrl) imageUrl = uploadedUrl;
@@ -82,6 +84,8 @@ export default function ProizvodForm({ onSuccess, selectedProizvod, onCancelEdit
             naziv: data.naziv,
             kolicina: parseInt(data.kolicina),
             cijena_po_komadu: parseFloat(data.cijena_po_komadu),
+            akcijska_cijena: akcijskaCijena > 0 ? akcijskaCijena : null,
+            na_akciji: naAkciji,
             opis: data.opis || '',
             slika: imageUrl,
           })
@@ -96,6 +100,8 @@ export default function ProizvodForm({ onSuccess, selectedProizvod, onCancelEdit
             naziv: data.naziv,
             kolicina: parseInt(data.kolicina),
             cijena_po_komadu: parseFloat(data.cijena_po_komadu),
+            akcijska_cijena: akcijskaCijena > 0 ? akcijskaCijena : null,
+            na_akciji: naAkciji,
             opis: data.opis || '',
             slika: imageUrl,
           }]);
@@ -130,17 +136,25 @@ export default function ProizvodForm({ onSuccess, selectedProizvod, onCancelEdit
         </Typography>
 
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-          <TextField label="Šifra" {...register('sifra', { required: true })} sx={{ flex: 1, minWidth: 150 }} />
-          <TextField label="Naziv" {...register('naziv', { required: true })} sx={{ flex: 2, minWidth: 200 }} />
-          <TextField label="Količina" type="number" {...register('kolicina', { required: true })} sx={{ width: 150 }} />
-          <TextField
-            label="Cijena (KM)"
-            type="number"
-            inputProps={{ step: '0.01' }}
-            {...register('cijena_po_komadu', { required: true })}
-            sx={{ width: 150 }}
-          />
-        </Box>
+  <TextField label="Šifra" {...register('sifra', { required: true })} sx={{ flex: 1, minWidth: 150 }} />
+  <TextField label="Naziv" {...register('naziv', { required: true })} sx={{ flex: 2, minWidth: 200 }} />
+  <TextField label="Količina" type="number" {...register('kolicina', { required: true })} sx={{ width: 150 }} />
+  <TextField
+    label="Cijena (KM)"
+    type="number"
+    inputProps={{ step: '0.01' }}
+    {...register('cijena_po_komadu', { required: true })}
+    sx={{ width: 150 }}
+  />
+  <TextField
+    label="Akcijska cijena (KM)"
+    type="number"
+    inputProps={{ step: '0.01', min: 0 }}
+    {...register('akcijska_cijena')}
+    sx={{ width: 150 }}
+  />
+</Box>
+
 
         <TextField
           label="Opis"

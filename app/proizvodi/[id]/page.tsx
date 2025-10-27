@@ -18,6 +18,10 @@ import {
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import toast from 'react-hot-toast';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs from 'dayjs';
 
 export default function ProizvodDetalji() {
   const { id } = useParams();
@@ -239,17 +243,45 @@ export default function ProizvodDetalji() {
             const storedUser = localStorage.getItem('user');
             if (!storedUser) return toast.error('Nema korisnika');
             const user = JSON.parse(storedUser);
-
+        
+            // 🔹 Provjeri postoji li već KREIRANA narudžba
             let { data: narudzbaData } = await supabase
               .from('narudzbe')
               .select('*')
               .eq('korisnik_id', user.id)
               .eq('status', 'KREIRANA')
               .single();
-
+        
             let narudzbaId = narudzbaData?.id;
-
+        
+            // 🔹 Ako ne postoji, kreiraj novu sa defaultnim terminom isporuke
             if (!narudzbaId) {
+              // Dohvati sve zauzete termine
+              const { data: zauzeti, error: zauzetiErr } = await supabase
+                .from('narudzbe')
+                .select('termin_isporuke')
+                .not('termin_isporuke', 'is', null)
+                .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+        
+              if (zauzetiErr) throw zauzetiErr;
+        
+              const zauzetiTermini = zauzeti?.map((n) => dayjs(n.termin_isporuke)) || [];
+        
+              // Počni od sutra u 08:00
+              let termin = dayjs().add(1, 'day').hour(8).minute(0).second(0);
+        
+              // Traži prvi slobodan termin (svakih 30 minuta do 19h)
+              while (zauzetiTermini.some((z) => z.isSame(termin, 'minute')) && termin.hour() < 19) {
+                termin = termin.add(30, 'minute');
+              }
+        
+              // Ako nema slobodnog termina
+              if (termin.hour() >= 19) {
+                toast.error('Nema slobodnih termina sutra između 08:00 i 19:00');
+                return;
+              }
+        
+              // Kreiraj novu narudžbu sa tim terminom
               const { data: novaNarudzba, error: novaErr } = await supabase
                 .from('narudzbe')
                 .insert([
@@ -259,23 +291,29 @@ export default function ProizvodDetalji() {
                     adresa_isporuke: user.adresa,
                     status: 'KREIRANA',
                     datum_kreiranja: new Date().toISOString(),
+                    termin_isporuke: termin.format('YYYY-MM-DD HH:mm:ss'),
                   },
                 ])
                 .select()
                 .single();
+        
               if (novaErr) throw novaErr;
               narudzbaId = novaNarudzba.id;
             }
-
+        
+            // 🔹 Dodaj proizvod u narudžbu
             await supabase.from('stavke_narudzbe').insert([
               {
                 narudzba_id: narudzbaId,
                 proizvod_id: proizvod.id,
                 kolicina: 1,
-                cijena_po_komadu: proizvod.cijena_po_komadu,
+                cijena_po_komadu: (proizvod.akcijska_cijena && proizvod.akcijska_cijena > 0)
+  ? proizvod.akcijska_cijena
+  : proizvod.cijena_po_komadu,
+
               },
             ]);
-
+        
             toast.success(`Proizvod "${proizvod.naziv}" dodat u narudžbu`);
             router.push('/proizvodi');
           } catch (err) {
@@ -283,6 +321,7 @@ export default function ProizvodDetalji() {
             toast.error('Greška pri dodavanju proizvoda u narudžbu');
           }
         }}
+        
       >
         <AddShoppingCartIcon fontSize="medium" />
       </IconButton>
@@ -305,8 +344,24 @@ export default function ProizvodDetalji() {
       <b>Količina:</b> {proizvod.kolicina}
     </Typography>
     <Typography sx={{ mb: 1 }}>
-      <b>Cijena po komadu:</b> {proizvod.cijena_po_komadu} KM
-    </Typography>
+  <b>Cijena:</b>{' '}
+  {proizvod.akcijska_cijena && proizvod.akcijska_cijena > 0 ? (
+    <Box component="span" sx={{ display: 'inline-flex', flexDirection: 'column', textAlign: 'right' }}>
+      <Typography
+        component="span"
+        sx={{ textDecoration: 'line-through', color: '#888' }}
+      >
+        {proizvod.cijena_po_komadu} KM
+      </Typography>
+      <Typography component="span" sx={{ color: '#d32f2f', fontWeight: 700 }}>
+        {proizvod.akcijska_cijena} KM
+      </Typography>
+    </Box>
+  ) : (
+    <Typography component="span">{proizvod.cijena_po_komadu} KM</Typography>
+  )}
+</Typography>
+
     <Typography sx={{ mb: 1 }}>
       <b>Opis:</b> {proizvod.opis || '-'}
     </Typography>

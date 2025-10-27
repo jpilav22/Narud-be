@@ -19,6 +19,8 @@ import {
   DialogActions,
   Divider,
 } from '@mui/material';
+import { Tooltip } from '@mui/material';
+
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
 import EditIcon from '@mui/icons-material/Edit';
@@ -35,6 +37,7 @@ type Proizvod = {
   naziv: string;
   cijena_po_komadu: number;
   kolicina: number;
+  akcijska_cijena:number;
 };
 
 type Stavka = {
@@ -93,7 +96,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
 
           const { data: stavkeData } = await supabase
             .from('stavke_narudzbe')
-            .select('id, proizvod_id, kolicina, cijena_po_komadu, proizvodi (naziv)')
+            .select('id, proizvod_id, kolicina, cijena_po_komadu, proizvodi (naziv, akcijska_cijena)')
             .eq('narudzba_id', aktivna.id);
 
           if (stavkeData) {
@@ -102,9 +105,13 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
                 id: s.id,
                 proizvodId: s.proizvod_id,
                 naziv: s.proizvodi?.naziv || '',
-                cijena: s.cijena_po_komadu,
+               
+
+
+                cijena: s.akcijska_cijena && s.akcijska_cijena !== 0 ? s.akcijska_cijena : s.cijena_po_komadu,
+
                 kolicina: s.kolicina,
-                ukupno: s.cijena_po_komadu * s.kolicina,
+                ukupno: (s.akcijska_cijena && s.akcijska_cijena !== 0 ? s.akcijska_cijena : s.cijena_po_komadu) * s.kolicina,
               }))
             );
           }
@@ -115,6 +122,70 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
     fetchData();
   }, [existingNarudzba]);
 
+useEffect(() => {
+  
+
+  const setDefaultTermin = async () => {
+    const sutra = dayjs().add(1, 'day').hour(8).minute(0).second(0);
+    let termin = sutra;
+
+    const { data: zauzeti } = await supabase
+      .from('narudzbe')
+      .select('termin_isporuke')
+      .not('termin_isporuke', 'is', null)
+      .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+
+    const zauzetiTermini = zauzeti?.map((n) => dayjs(n.termin_isporuke)) || [];
+
+    // Traži prvi slobodan termin između 8 i 19
+    while (zauzetiTermini.some((z) => z.isSame(termin, 'minute')) && termin.hour() < 19) {
+      termin = termin.add(30, 'minute');
+    }
+
+    if (termin.hour() >= 19) {
+      toast.error('Nema slobodnih termina sutra od 08:00 do 19:00');
+      setTerminIsporuke(null);
+    } else {
+      setTerminIsporuke(termin);
+    }
+  };
+
+  setDefaultTermin();
+}, [existingNarudzba]);
+
+
+useEffect(() => {
+  const setDefaultTermin = async () => {
+    const sutra = dayjs().add(1, 'day').hour(8).minute(0).second(0);
+    let termin = sutra;
+
+    const { data: zauzeti } = await supabase
+      .from('narudzbe')
+      .select('termin_isporuke')
+      .not('termin_isporuke', 'is', null)
+      .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+
+    const zauzetiTermini = zauzeti?.map((n) => dayjs(n.termin_isporuke)) || [];
+
+    while (zauzetiTermini.some((z) => z.isSame(termin, 'minute')) && termin.hour() < 19) {
+      termin = termin.add(30, 'minute');
+    }
+
+    if (termin.hour() >= 19) {
+      toast.error('Nema slobodnih termina sutra između 08:00 i 19:00');
+      setTerminIsporuke(null);
+    } else {
+      setTerminIsporuke(termin);
+    }
+  };
+
+  setDefaultTermin();
+}, [existingNarudzba]);
+
+
+
+
+  
   const dodajStavku = async () => {
     if (!odabraniProizvod) return toast.error('Odaberite proizvod');
     if (kolicina <= 0) return toast.error('Količina mora biti veća od 0');
@@ -143,24 +214,37 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
         narudzbaId = nova.id;
       }
 
-      const { error: stavkaErr } = await supabase.from('stavke_narudzbe').insert([
-        {
-          narudzba_id: narudzbaId,
-          proizvod_id: odabraniProizvod.id,
-          kolicina,
-          cijena_po_komadu: odabraniProizvod.cijena_po_komadu,
-        },
-      ]);
+      const { data: novaStavkaData, error: stavkaErr } = await supabase
+  .from('stavke_narudzbe')
+  .insert([
+    {
+      narudzba_id: narudzbaId,
+      proizvod_id: odabraniProizvod.id,
+      kolicina,
+      cijena_po_komadu: odabraniProizvod.akcijska_cijena && odabraniProizvod.akcijska_cijena !== 0 
+                         ? odabraniProizvod.akcijska_cijena 
+                         : odabraniProizvod.cijena_po_komadu,
+      
+    },
+  ])
+  .select()
+  .single();
 
-      if (stavkaErr) throw stavkaErr;
+if (stavkaErr) throw stavkaErr;
 
-      const novaStavka: Stavka = {
-        proizvodId: odabraniProizvod.id,
-        naziv: odabraniProizvod.naziv,
-        cijena: odabraniProizvod.cijena_po_komadu,
-        kolicina,
-        ukupno: odabraniProizvod.cijena_po_komadu * kolicina,
-      };
+const novaStavka: Stavka = {
+  id: novaStavkaData.id,
+  proizvodId: odabraniProizvod.id,
+  naziv: odabraniProizvod.naziv,
+  cijena: odabraniProizvod.akcijska_cijena && odabraniProizvod.akcijska_cijena !== 0 
+           ? odabraniProizvod.akcijska_cijena 
+           : odabraniProizvod.cijena_po_komadu,
+  kolicina,
+  ukupno: (odabraniProizvod.akcijska_cijena && odabraniProizvod.akcijska_cijena !== 0 
+           ? odabraniProizvod.akcijska_cijena 
+           : odabraniProizvod.cijena_po_komadu) * kolicina,
+};
+
 
       setStavke([...stavke, novaStavka]);
       setOdabraniProizvod(null);
@@ -171,7 +255,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
     }
   };
 
-  const zatvoriFormu = () => router.push('/proizvodi');
+  const zatvoriFormu = () => router.push('/narudzbe');
 
   const spremiNarudzbu = async () => {
     if (!aktivnaNarudzba) return toast.error('Nema aktivne narudžbe');
@@ -181,23 +265,22 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
         .from('narudzbe')
         .update({
           status: 'KREIRANA',
-          termin_isporuke: terminIsporuke ? terminIsporuke.toISOString() : null,
+          termin_isporuke: terminIsporuke ? terminIsporuke.format('YYYY-MM-DD HH:mm:ss') : null,
         })
         .eq('id', aktivnaNarudzba.id);
   
       if (error) {
-        console.error('Supabase error:', error); // ispisi grešku u konzolu
+        console.error('Supabase error:', error);
         toast.error('Greška pri spremanju narudžbe: ' + error.message);
         return;
       }
   
-      console.log('Uspješno spremljeno:', data); // potvrda u konzoli
+      console.log('Uspješno spremljeno:', data);
       toast.success('Narudžba spremljena!');
       onSuccess();
       onClose();
-      router.push('/proizvodi');
+      router.push('/narudzbe');
     } catch (err) {
-      // Ovdje će pasti stvarne runtime greške, npr. network error
       console.error('Runtime error:', err);
       toast.error('Greška pri spremanju narudžbe (runtime)');
     }
@@ -209,7 +292,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
     if (!terminIsporuke) return toast.error('Odaberite termin isporuke prije slanja!');
     const sat = terminIsporuke.hour();
     if (sat < 8 || sat >= 19) {
-      return toast.error('Termin isporuke mora biti između 08:00 i 19:00.');
+      return toast.error('Termin isporuke mora biti od 08:00 do 19:00.');
     }
 
     const { data: zauzeti } = await supabase
@@ -240,14 +323,11 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
           .eq('id', s.proizvodId);
       }
 
-
-
-
       await supabase
         .from('narudzbe')
         .update({
           status: 'NARUČENA',
-          termin_isporuke: terminIsporuke.toISOString(),
+          termin_isporuke: terminIsporuke.format('YYYY-MM-DD HH:mm:ss'),
         })
         .eq('id', aktivnaNarudzba.id);
 
@@ -256,7 +336,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
       setStavke([]);
       onSuccess();
       onClose();
-      router.push('/proizvodi');
+      router.push('/narudzbe');
     } catch {
       toast.error('Greška pri slanju narudžbe');
     }
@@ -266,7 +346,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
     if (!aktivnaNarudzba) {
       onSuccess();
       onClose();
-      router.push('/proizvodi');
+      router.push('/narudzbe');
       return;
     }
     try {
@@ -308,24 +388,55 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
           .update({
             proizvod_id: noviProizvod.id,
             kolicina: novaKolicina,
-            cijena_po_komadu: noviProizvod.cijena_po_komadu,
+            cijena_po_komadu: noviProizvod.akcijska_cijena && noviProizvod.akcijska_cijena !== 0 
+                         ? noviProizvod.akcijska_cijena 
+                         : noviProizvod.cijena_po_komadu,    // <-- dodaj ovo
           })
           .eq('id', stavkaZaEdit.id);
 
-      setStavke(
-        stavke.map((s) =>
-          s.proizvodId === stavkaZaEdit.proizvodId
-            ? {
-                ...s,
-                proizvodId: noviProizvod.id,
-                naziv: noviProizvod.naziv,
-                kolicina: novaKolicina,
-                cijena: noviProizvod.cijena_po_komadu,
-                ukupno: noviProizvod.cijena_po_komadu * novaKolicina,
-              }
-            : s
-        )
-      );
+          setStavke(
+            stavke.map((s) =>
+              s.id === stavkaZaEdit.id
+                ? {
+                    ...s,
+                    proizvodId: noviProizvod.id,
+                    naziv: noviProizvod.naziv,
+                    kolicina: novaKolicina,
+                    cijena: noviProizvod.akcijska_cijena && noviProizvod.akcijska_cijena !== 0 
+                  ? noviProizvod.akcijska_cijena 
+                  : noviProizvod.cijena_po_komadu,
+          ukupno: (noviProizvod.akcijska_cijena && noviProizvod.akcijska_cijena !== 0 
+                  ? noviProizvod.akcijska_cijena 
+                  : noviProizvod.cijena_po_komadu) * novaKolicina,
+                  }
+                : s
+            )
+          );
+          
+          if (novaKolicina < 1) {
+            toast.error('Količina mora biti najmanje 1');
+            return;
+          }
+          
+      const { data: refreshed } = await supabase
+      .from('stavke_narudzbe')
+      .select('id, proizvod_id, kolicina, cijena_po_komadu, proizvodi (naziv, akcijska_cijena)')
+      .eq('narudzba_id', aktivnaNarudzba.id);
+      if (refreshed) {
+        setStavke(
+          refreshed.map((s: any) => ({
+            id: s.id,
+            proizvodId: s.proizvod_id,
+            naziv: s.proizvodi?.naziv || '',
+            cijena: s.akcijska_cijena && s.akcijska_cijena !== 0 
+            ? s.akcijska_cijena 
+            : s.cijena_po_komadu, // <-- ovdje je ključ
+            kolicina: s.kolicina,
+            ukupno: (s.akcijska_cijena && s.akcijska_cijena !== 0 ? s.akcijska_cijena : s.cijena_po_komadu) * s.kolicina,
+          }))
+        );
+      }
+      
       setEditOpen(false);
       toast.success('Stavka ažurirana');
     } catch {
@@ -372,7 +483,7 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
               }
 
               if (sat < 8 || sat >= 19) {
-                toast.error('Termin isporuke mora biti između 08:00 i 19:00.');
+                toast.error('Termin isporuke mora biti od 08:00 do 19:00.');
                 return;
               }
 
@@ -402,6 +513,11 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
             minutesStep={30}
             ampm={false}
             sx={{ width: '100%' }}
+            slotProps={{
+              textField: {
+                helperText: 'Dostava moguća od 08:00 do 19:00 sati.',
+              },
+            }}
           />
         </LocalizationProvider>
       </Paper>
@@ -409,24 +525,44 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
       {/* Dodavanje stavki */}
       {!aktivnaNarudzba || aktivnaNarudzba.status === 'KREIRANA' ? (
         <Paper sx={{ p: 3, borderRadius: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Autocomplete
-            options={proizvodi}
-            getOptionLabel={(option) => option.naziv}
-            value={odabraniProizvod}
-            onChange={(_, newVal) => setOdabraniProizvod(newVal)}
-            sx={{ flex: 2, minWidth: 200 }}
-            renderInput={(params) => <TextField {...params} label="Proizvod" />}
-          />
+           <Autocomplete
+      options={proizvodi}
+      getOptionLabel={(option) => option.naziv}
+      value={odabraniProizvod}
+      onChange={(_, val) => setOdabraniProizvod(val)}
+      sx={{ flex: 2 }}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label="Proizvod"
+          helperText={!odabraniProizvod ? 'Odaberite proizvod za dodavanje' : ''}
+        />
+      )}
+    />
+          
           <TextField
-            label="Količina"
-            type="number"
-            value={kolicina}
-            onChange={(e) => setKolicina(parseInt(e.target.value))}
-            sx={{ width: 100 }}
-          />
-          <Button variant="contained" onClick={dodajStavku}>
-            +
-          </Button>
+  type="number"
+  label="Količina"
+  value={kolicina}
+  onChange={(e) => setKolicina(Number(e.target.value))}
+  sx={{ width: 120 }}
+  InputProps={{ inputProps: { min: 0 } }} // dozvoli unos 0 radi greške
+  error={kolicina < 1} // crveni border ako je < 1
+  helperText={kolicina < 1 ? 'Količina mora biti najmanje 1' : ''} // isti tekst
+/>
+
+          <Tooltip title="Dodaj stavku u narudžbu">
+  <span>
+    <Button 
+      variant="contained" 
+      onClick={dodajStavku} 
+      disabled={kolicina <= 0 || !odabraniProizvod}
+    >
+      +
+    </Button>
+  </span>
+</Tooltip>
+
         </Paper>
       ) : null}
 
@@ -451,68 +587,113 @@ export default function NarudzbaForm({ onSuccess , onClose, existingNarudzba }: 
                   <TableCell>{s.cijena.toFixed(2)}</TableCell>
                   <TableCell>{s.ukupno.toFixed(2)}</TableCell>
                   <TableCell>
-                    <Button size="small" onClick={() => handleEdit(s)}>
-                      <EditIcon fontSize="small" />
-                    </Button>
-                    <Button size="small" color="error" onClick={() => obrisiStavku(s)}>
-                      <DeleteIcon fontSize="small" />
-                    </Button>
+                  <Tooltip title="Uredi stavku">
+  <Button size="small" onClick={() => handleEdit(s)}>
+    <EditIcon fontSize="small" />
+  </Button>
+</Tooltip>
+<Tooltip title="Obriši stavku">
+  <Button size="small" color="error" onClick={() => obrisiStavku(s)}>
+    <DeleteIcon fontSize="small" />
+  </Button>
+</Tooltip>
+
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
           <Divider sx={{ my: 1 }} />
-          <Typography sx={{ p: 1, textAlign: 'right', fontWeight: 600 }}>
-            Ukupna cijena: {ukupnaCijena.toFixed(2)} KM
-          </Typography>
+         
         </Paper>
       )}
+<Divider sx={{ my: 2 }} />
+
+{/* UKUPNA CIJENA BLOK */}
+<Box
+  sx={{
+    mt: 3,
+    display: 'flex',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    p: 2,
+    borderRadius: 2,
+    backgroundColor: '#fff',
+    boxShadow: 2,
+  }}
+>
+  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+    Ukupna cijena: {ukupnaCijena.toFixed(2)} KM
+  </Typography>
+</Box>
 
       {/* Dugmad akcija */}
       {aktivnaNarudzba && (
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 2 }}>
-          <Button variant="outlined" color="warning" onClick={spremiNarudzbu}>
-            Spremi narudžbu
-          </Button>
+          <Button 
+  variant="outlined" 
+  color="warning" 
+  onClick={spremiNarudzbu} 
+  disabled={stavke.length === 0}
+>
+  Spremi narudžbu
+</Button>
+<Button 
+  variant="contained" 
+  onClick={posaljiNarudzbu} 
+  disabled={stavke.length === 0}
+>
+  Naruči
+</Button>
+
           <Button variant="outlined" color="error" onClick={ponistiNarudzbu}>
             Poništi
-          </Button>
-          <Button variant="contained" onClick={posaljiNarudzbu}>
-            Naruči
           </Button>
         </Box>
       )}
 
       {/* Dijalog za edit stavke */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)}>
-        <DialogTitle>Uredi stavku</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Autocomplete
-            options={proizvodi}
-            getOptionLabel={(option) => option.naziv}
-            value={noviProizvod}
-            onChange={(_, newVal) => setNoviProizvod(newVal)}
-            renderInput={(params) => <TextField {...params} label="Proizvod" />}
-          />
-          <TextField
-            type="number"
-            label="Količina"
-            value={novaKolicina}
-            onChange={(e) => setNovaKolicina(parseInt(e.target.value))}
-          />
-          <Typography>Cijena po komadu: {noviProizvod?.cijena_po_komadu.toFixed(2)} KM</Typography>
-          <Typography>
-            Ukupno: {(noviProizvod ? noviProizvod.cijena_po_komadu * novaKolicina : 0).toFixed(2)} KM
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Odustani</Button>
-          <Button variant="contained" onClick={sacuvajEdit}>
-            Sačuvaj
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Dijalog za edit stavke */}
+<Dialog open={editOpen} onClose={() => setEditOpen(false)}>
+  <DialogTitle>Uredi stavku</DialogTitle>
+  <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <Autocomplete
+      options={proizvodi}
+      getOptionLabel={(option) => option.naziv}
+      value={noviProizvod}
+      onChange={(_, newVal) => setNoviProizvod(newVal)}
+      renderInput={(params) => <TextField {...params} label="Proizvod" />}
+    />
+
+<TextField
+  label="Količina"
+  type="number"
+  value={novaKolicina}
+  onChange={(e) => {
+    const val = Number(e.target.value);
+    setNovaKolicina(val);
+  }}
+  InputProps={{ inputProps: { min: 0 } }} // dozvoli unos 0 da se može prikazati greška
+  error={novaKolicina < 1} // crveni border ako je količina < 1
+  helperText={novaKolicina < 1 ? 'Količina mora biti najmanje 1' : ''} // isti tekst kao u dodavanju
+  sx={{ width: '100%' }}
+/>
+
+  </DialogContent>
+
+  <DialogActions>
+    <Button onClick={() => setEditOpen(false)}>Otkaži</Button>
+    <Button
+      variant="contained"
+      onClick={sacuvajEdit}
+      disabled={!noviProizvod || novaKolicina <= 0}
+    >
+      Sačuvaj
+    </Button>
+  </DialogActions>
+</Dialog>
+
     </Box>
   );
 }
+

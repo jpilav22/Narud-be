@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 
 import Grid from '@mui/material/Grid';
+import { Chip, FormHelperText } from '@mui/material';
 
 import { supabase } from '@/lib/supabaseClient';
 import toast from 'react-hot-toast';
@@ -34,7 +35,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import dayjs from 'dayjs';
-
+import { Tooltip } from '@mui/material';
 export default function NarudzbaDetaljiPage() {
   const params = useParams();
   const router = useRouter();
@@ -48,6 +49,7 @@ export default function NarudzbaDetaljiPage() {
   const [kolicina, setKolicina] = useState(1);
   const [terminIsporuke, setTerminIsporuke] = useState<dayjs.Dayjs | null>(null);
   const [user, setUser] = useState<any | null>(null);
+  const [terminError, setTerminError] = useState<string>('');
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -60,7 +62,102 @@ export default function NarudzbaDetaljiPage() {
     status === 'NA_ADRESI' ||
     status === 'ISPORUCENA' ||
     status === 'PREUZETA';
+    const statusColorMap: Record<string, string> = {
+      KREIRANA: 'grey',
+      NARUČENA: '#2196f3', // plava
+      U_OBRADI: '#ff9800', // narandžasta
+      ISPORUCENA: '#4caf50', // zelena
+      NA_ADRESI: '#9c27b0', // ljubičasta
+      PREUZETA: '#009688', // tirkiz
+      OTKAZANA: '#f44336', // crvena
+    };
 
+
+
+    // izbriši ovaj dio jer ti objekt statusColorMap zapravo uopšte ne treba
+// const statusColorMap: Record<string, string> = {
+
+// Ostavimo helper funkciju vani
+const getStatusChip = (status: string) => {
+  const map: Record<
+    string,
+    { label: string; color: string; bg: string }
+  > = {
+    KREIRANA: { label: 'Kreirana', color: '#616161', bg: '#eeeeee' },
+    NARUČENA: { label: 'Naručena', color: '#1976d2', bg: '#e3f2fd' },
+    U_OBRADI: { label: 'U obradi', color: '#ed6c02', bg: '#fff3e0' },
+    NA_ADRESI: { label: 'Na adresi', color: '#6a1b9a', bg: '#f3e5f5' },
+    ISPORUCENA: { label: 'Isporučena', color: '#2e7d32', bg: '#e8f5e9' },
+    PREUZETA: { label: 'Preuzeta', color: '#1b5e20', bg: '#c8e6c9' },
+    OTKAZANA: { label: 'Otkazana', color: '#d32f2f', bg: '#ffebee' },
+  };
+
+  const s = map[status] || { label: status, color: '#757575', bg: '#f5f5f5' };
+
+  return (
+    <Chip
+      label={s.label}
+      sx={{
+        bgcolor: s.bg,
+        color: s.color,
+        fontWeight: 600,
+        textTransform: 'uppercase',
+        letterSpacing: 0.3,
+        px: 0.5,
+      }}
+      size="small"
+    />
+  );
+};
+
+useEffect(() => {
+  const checkTermin = async () => {
+    if (!terminIsporuke) {
+      setTerminError('');
+      return;
+    }
+
+    const sada = dayjs();
+
+    // ⛔ Ako je termin u prošlosti
+    if (terminIsporuke.isBefore(sada)) {
+      setTerminError('Odabrani termin je sada u prošlosti. Odaberite drugi termin ukoliko želite naručiti.');
+      return;
+    }
+
+    // 🔄 Provjeri da li je termin zauzet
+    const { data: zauzeti, error } = await supabase
+      .from('narudzbe')
+      .select('id, termin_isporuke')
+      .not('termin_isporuke', 'is', null)
+      .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+
+    if (error) {
+      console.error(error);
+      setTerminError('Greška pri provjeri termina.');
+      return;
+    }
+
+    const zauzet = zauzeti?.some(
+      (n) =>
+        dayjs(n.termin_isporuke).isSame(terminIsporuke, 'minute') &&
+        n.id !== narudzba?.id
+    );
+
+    if (zauzet) {
+      setTerminError('Taj termin je sada zauzet. Odaberite drugi.');
+      return;
+    }
+
+    setTerminError('');
+  };
+
+  checkTermin();
+}, [terminIsporuke]);
+
+
+    
+    
   useEffect(() => {
     const fetchNarudzba = async () => {
       if (!params.id) return;
@@ -68,7 +165,7 @@ export default function NarudzbaDetaljiPage() {
       try {
         const { data: nData, error: nError } = await supabase
           .from('narudzbe')
-          .select('*')
+          .select('*, korisnici(ime, prezime)')
           .eq('id', params.id)
           .single();
         if (nError) throw nError;
@@ -101,7 +198,7 @@ export default function NarudzbaDetaljiPage() {
       } catch (err: any) {
         console.error(err);
         toast.error('Greška pri učitavanju narudžbe');
-        router.push('/proizvodi');
+        router.push('/narudzbe');
       } finally {
         setLoading(false);
       }
@@ -131,14 +228,17 @@ export default function NarudzbaDetaljiPage() {
     if (isLocked) return;
     if (!odabraniProizvod) return toast.error('Odaberite proizvod');
     if (kolicina <= 0) return toast.error('Količina mora biti veća od 0');
-
+    const cijenaZaKoristiti =
+    odabraniProizvod.akcijska_cijena && odabraniProizvod.akcijska_cijena > 0
+      ? odabraniProizvod.akcijska_cijena
+      : odabraniProizvod.cijena_po_komadu;
     const nova = {
       id: Date.now(),
       proizvod_id: odabraniProizvod.id,
       naziv: odabraniProizvod.naziv,
       kolicina,
-      cijena: odabraniProizvod.cijena_po_komadu,
-      ukupno: odabraniProizvod.cijena_po_komadu * kolicina,
+      cijena: cijenaZaKoristiti,
+      ukupno: cijenaZaKoristiti * kolicina,
       temp: true,
     };
 
@@ -268,8 +368,13 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
         .eq('id', narudzba.id);
 
       setStatus(newStatus || status);
-      toast.success('Promjene uspješno sačuvane!');
-      router.push('/proizvodi');
+      if(newStatus === 'NARUČENA'){
+        toast.success('Narudžba uspješno naručena!');
+      } else {
+        toast.success('Promjene uspješno sačuvane!');
+      }
+      
+      router.push('/narudzbe');
     } catch (err) {
       console.error(err);
       toast.error('Greška pri spremanju promjena');
@@ -289,7 +394,7 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
         Nije pronađena narudžba
       </Typography>
     );
-
+    const nemaStavki = stavke.length === 0;
   return (
     <Box sx={{ p: 3, maxWidth: 1200, mx: 'auto', backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
       <Paper sx={{ p: 3, mb: 3, borderRadius: 3, boxShadow: 4, backgroundColor: '#ffffff' }}>
@@ -302,92 +407,138 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
             variant="outlined"
             color="secondary"
             startIcon={<ArrowBackIcon />}
-            onClick={() => router.push('/proizvodi')}
+            onClick={() => router.push('/narudzbe')}
           >
             Nazad
           </Button>
         </Stack>
 
         {/* STATUS I TERMIN */}
-        <Box sx={{ mb: 2 }}>
-          <Typography color="text.secondary" component="div" sx={{ mb: 1 }}>
-            <strong>Status:</strong> {status}
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 1 }}>
-            <strong>Datum kreiranja:</strong>{' '}
-            {(() => {
-              const value = narudzba.datum_kreiranja;
-              if (!value) return '-';
-              const date = new Date(value.endsWith('Z') ? value : value + 'Z');
-              if (isNaN(date.getTime())) return '-';
-              const dan = String(date.getDate()).padStart(2, '0');
-              const mjesec = String(date.getMonth() + 1).padStart(2, '0');
-              const godina = date.getFullYear();
-              const sati = String(date.getHours()).padStart(2, '0');
-              const minute = String(date.getMinutes()).padStart(2, '0');
-              return `${dan}.${mjesec}.${godina}. ${sati}:${minute}`;
-            })()}
-          </Typography>
+       {/* STATUS I TERMIN */}
+<Box
+  sx={{
+    mb: 3,
+    p: 2,
+    borderRadius: 2,
+    backgroundColor: '#fafafa',
+    boxShadow: 1,
+  }}
+>
+  <Grid container spacing={2} alignItems="center">
+    {/* Lijeva strana — status i datum */}
+    <Grid item xs={12} md={6}>
+  <Box
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1.5,
+      bgcolor: '#f9f9f9',
+      px: 2,
+      py: 1,
+      borderRadius: 2,
+      border: '1px solid #e0e0e0',
+      width: 'fit-content',
+    }}
+  >
+    <Typography variant="subtitle2" color="text.secondary" sx={{ fontWeight: 500 }}>
+      Status:
+    </Typography>
+    {getStatusChip(status)}
 
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DateTimePicker
-              label="Termin isporuke"
-              value={terminIsporuke}
-              onChange={async (newValue) => {
-                if (status !== 'KREIRANA') return;
-                if (!newValue) return;
-                const sat = newValue.hour();
-                const sada = dayjs();
-                if (newValue.isBefore(sada)) {
-                  toast.error('Ne možete odabrati termin u prošlosti.');
-                  return;
-                }
-                if (sat < 8 || sat >= 19) {
-                  toast.error('Termin isporuke mora biti između 08:00 i 19:00.');
-                  return;
-                }
 
-                const { data: zauzeti, error } = await supabase
-                  .from('narudzbe')
-                  .select('termin_isporuke')
-                  .not('termin_isporuke', 'is', null)
-                  .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+  </Box>
 
-                if (error) {
-                  console.error(error);
-                  toast.error('Greška pri provjeri termina.');
-                  return;
-                }
+  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+    {(() => {
+      const value = narudzba.datum_kreiranja;
+      if (!value) return '-';
+      const date = new Date(value.endsWith('Z') ? value : value + 'Z');
+      if (isNaN(date.getTime())) return '-';
+      return `Kreirano: ${dayjs(date).format('DD.MM.YYYY. HH:mm')}`;
+    })()}
+  </Typography>
+</Grid>
 
-                const zauzet = zauzeti?.some((n) =>
-                  dayjs(n.termin_isporuke).isSame(newValue, 'minute')
-                );
-                if (zauzet) {
-                  toast.error('Taj termin je već zauzet. Odaberite drugi.');
-                  return;
-                }
 
-                setTerminIsporuke(newValue);
-              }}
-              disablePast
-              minutesStep={30}
-              ampm={false}
-              sx={{ width: 250, mt: 1 }}
-              disabled={status !== 'KREIRANA'}
-            />
-          </LocalizationProvider>
-        </Box>
+
+
+    {/* Desna strana — termin isporuke */}
+    <Grid item xs={12} md={6}>
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <DateTimePicker
+          label="Termin isporuke"
+          value={terminIsporuke}
+          onChange={async (newValue) => {
+            if (status !== 'KREIRANA' && status !== 'OTKAZANA' ) return;
+            if (!newValue) return;
+            const sat = newValue.hour();
+            const sada = dayjs();
+            if (newValue.isBefore(sada)) {
+              toast.error('Ne možete odabrati termin u prošlosti.');
+              return;
+            }
+            if (sat < 8 || sat >= 19) {
+              toast.error('Termin isporuke mora biti od 08:00 do 19:00.');
+              return;
+            }
+
+            const { data: zauzeti, error } = await supabase
+              .from('narudzbe')
+              .select('termin_isporuke')
+              .not('termin_isporuke', 'is', null)
+              .in('status', ['KREIRANA', 'NARUČENA', 'ISPORUCENA']);
+
+            if (error) {
+              console.error(error);
+              toast.error('Greška pri provjeri termina.');
+              return;
+            }
+
+            const zauzet = zauzeti?.some((n) =>
+              dayjs(n.termin_isporuke).isSame(newValue, 'minute')
+            );
+            if (zauzet) {
+              toast.error('Taj termin je već zauzet. Odaberite drugi.');
+              return;
+            }
+
+            setTerminIsporuke(newValue);
+          }}
+          disablePast
+          minutesStep={30}
+          ampm={false}
+          sx={{ width: '100%' }}
+          disabled={status !== 'KREIRANA' && status !== 'OTKAZANA' }
+        />
+      </LocalizationProvider>
+
+      <FormHelperText sx={{ color: 'text.secondary', mt: 0.5 }}>
+        Dostava moguća od 08:00 do 19:00 sati.
+      </FormHelperText>
+
+      {terminError && (
+  <FormHelperText error sx={{ mt: 1 }}>
+    {terminError}
+  </FormHelperText>
+)}
+
+    </Grid>
+  </Grid>
+</Box>
+
+
 
         {/* DUGMAD ZA STATUS */}
         <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-          <Button
-            variant="contained"
-            color="info"
-            onClick={() => handleSaveSve('NARUČENA')}
-            disabled={status !== 'KREIRANA' && status !== 'OTKAZANA'}
-          >
-            Naruči
-          </Button>
+        <Button
+      variant="contained"
+      color="info"
+      onClick={() => handleSaveSve('NARUČENA')}
+      disabled={isLocked || nemaStavki || (status !== 'KREIRANA' && status !== 'OTKAZANA') ||  !!terminError}
+    >
+      Naruči
+    </Button>
+    
           <Button
             variant="outlined"
             color="error"
@@ -436,27 +587,62 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
 
         {/* Dodavanje stavki */}
         {!isLocked && (
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mt: 2 }}>
-            <Autocomplete
-              options={proizvodi}
-              getOptionLabel={(option) => option.naziv}
-              value={odabraniProizvod}
-              onChange={(_, val) => setOdabraniProizvod(val)}
-              sx={{ flex: 2 }}
-              renderInput={(params) => <TextField {...params} label="Proizvod" />}
-            />
-            <TextField
-              type="number"
-              label="Količina"
-              value={kolicina}
-              onChange={(e) => setKolicina(Number(e.target.value))}
-              sx={{ width: 100 }}
-            />
-            <Button variant="contained" onClick={handleAddStavkaTemp}>
-              <AddIcon fontSize="small" />
-            </Button>
-          </Box>
-        )}
+  <Box sx={{ mt: 2 }}>
+    {/* Polja za dodavanje stavki */}
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+      <Autocomplete
+        options={proizvodi}
+        getOptionLabel={(option) => option.naziv}
+        value={odabraniProizvod}
+        onChange={(_, val) => setOdabraniProizvod(val)}
+        sx={{ flex: 2 }}
+        renderInput={(params) => <TextField {...params} label="Proizvod" />}
+      />
+     <TextField
+  type="number"
+  label="Količina"
+  value={kolicina}
+  onChange={(e) => setKolicina(Number(e.target.value))}
+  sx={{ width: 100 }}
+  InputProps={{ inputProps: { min: 0 } }} // dopušta 0 radi prikaza greške
+  error={kolicina < 1}
+  helperText={kolicina < 1 ? 'Količina mora biti najmanje 1' : ''}
+/>
+
+
+      <Tooltip title="Dodaj proizvod u narudžbu">
+  <span>
+  <Button
+  variant="contained"
+  onClick={handleAddStavkaTemp}
+  disabled={!odabraniProizvod || kolicina < 1}
+  sx={{ height: 56 }}
+>
+  <AddIcon />
+</Button>
+
+  </span>
+</Tooltip>
+
+    </Box>
+
+    {/* Helper text odmah ispod */}
+    <FormHelperText sx={{ color: nemaStavki ? 'error.main' : 'text.secondary', mt: 0.5 }}>
+  {nemaStavki
+    ? 'Ne možete naručiti bez ijedne stavke.'
+    : 'Odaberite proizvod'}
+</FormHelperText>
+
+  </Box>
+)}
+
+
+
+
+
+
+      
+      
       </Paper>
 
       {/* GRID STAVKI SA EDIT I DELETE */}
@@ -481,20 +667,25 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
                 <Typography variant="h6">{s.naziv}</Typography>
                 {!isLocked && (
                   <Stack direction="row" spacing={1}>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => setEditMode({ ...s })}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => handleDeleteStavka(s.id)}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title="Uredi količinu">
+  <IconButton
+    size="small"
+    color="primary"
+    onClick={() => setEditMode({ ...s })}
+  >
+    <EditIcon fontSize="small" />
+  </IconButton>
+</Tooltip>
+<Tooltip title="Obriši stavku">
+  <IconButton
+    size="small"
+    color="error"
+    onClick={() => handleDeleteStavka(s.id)}
+  >
+    <DeleteIcon fontSize="small" />
+  </IconButton>
+</Tooltip>
+
                   </Stack>
                 )}
               </Stack>
@@ -520,31 +711,72 @@ if (newStatus === 'OTKAZANA' && status!=='KREIRANA') {
       <Dialog open={!!editMode} onClose={() => setEditMode(null)}>
         <DialogTitle>Uredi stavku</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField
-            label="Količina"
-            type="number"
-            value={editMode?.kolicina || ''}
-            onChange={(e) =>
-              setEditMode((prev: any) => ({ ...prev, kolicina: Number(e.target.value) }))
-            }
-          />
+        <TextField
+  label="Količina"
+  type="number"
+  value={editMode?.kolicina ?? 0}
+  onChange={(e) => {
+    const val = Number(e.target.value);
+    setEditMode((prev: any) => ({ ...prev, kolicina: val }));
+  }}
+  InputProps={{ inputProps: { min: 0 } }}
+  error={editMode?.kolicina < 1}
+  helperText={editMode?.kolicina < 1 ? 'Količina mora biti najmanje 1' : ''}
+/>
+
+
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditMode(null)}>Otkaži</Button>
-          <Button variant="contained" onClick={handleEditStavkaSave}>
-            Sačuvaj
-          </Button>
+          <Button
+  variant="contained"
+  onClick={handleEditStavkaSave}
+  disabled={editMode?.kolicina < 1}
+>
+  Sačuvaj
+</Button>
+
         </DialogActions>
       </Dialog>
 
-      <Box sx={{ mt: 3, textAlign: 'right' }}>
-        <Typography variant="h6">Ukupno: {ukupno.toFixed(2)} KM</Typography>
-        {!isLocked && (
-          <Button variant="contained" sx={{ mt: 1 }} onClick={() => handleSaveSve()}>
-            Sačuvaj promjene
-          </Button>
-        )}
-      </Box>
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+{/* UKUPNA CIJENA */}
+<Box
+  sx={{
+    mt: 3,
+    display: 'flex',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    p: 2,
+    borderRadius: 2,
+    backgroundColor: '#fff',
+    boxShadow: 2,
+  }}
+>
+  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+    Ukupna cijena: {ukupno.toFixed(2)} KM
+  </Typography>
+</Box>
+
+
+
+
+
+    <Button
+      variant="contained"
+      sx={{ mt: 1 }}
+      onClick={() => handleSaveSve()}
+      disabled={isLocked || nemaStavki || !!terminError}
+    >
+      Sačuvaj promjene
+    </Button>
+    {nemaStavki && (
+      <Typography variant="caption" color="error">
+        Nije moguće sačuvati promjene bez ijedne stavke
+      </Typography>
+    )}
+  </Box>
+
     </Box>
   );
 }

@@ -41,8 +41,8 @@ export default function SignIn() {
 
     localStorage.setItem('user', JSON.stringify(user));
 
-    if (user.uloga === 'ADMIN') router.push('/proizvodi');
-    else router.push('/proizvodi');
+    if (user.uloga === 'ADMIN') router.push('/dashboard');
+    else router.push('/dashboard');
   };
 
   return (
